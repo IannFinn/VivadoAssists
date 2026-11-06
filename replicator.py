@@ -1,5 +1,6 @@
 from dataclasses import dataclass,field
 import re
+import math
 vector_regex =  r"([\w, ]+?) : (in|out) STD_LOGIC_VECTOR \((\d+?) downto 0\)(;|\);)"
 single_regex = r"([\w, ]+?) : (in|out) STD_LOGIC(;|\);)"
 name_regex = r"entity (.+?) is"
@@ -34,9 +35,9 @@ class Component:
     def link(self,key,other_key,function=assign):
         self.links.append((key.upper(),other_key.upper(),function))
     def ins(self,key):
-        return self._ins[key.split("(")[0]]
+        return  1 if "(" in key and key.split("(")[0] in self._ins else self._ins[key]
     def outs(self,key):
-        return self._outs[key.split("(")[0]]
+        return 1 if "(" in key and key.split("(")[0] in self._outs else self._outs[key]
 
 def replicate(parent_comp:Component, rep_comp:Component):
     final = "---- PORTS ----\n"
@@ -84,6 +85,33 @@ def funnel(parent_comp:Component, fitted_comp:Component,name,suffix=None):
     final += f"""\n	{name}: {parent.name} PORT MAP (
     {", ".join([f'{to_l} => {from_l}_{to_l}{suffix if suffix else ""}' for from_l,to_l,_ in fitted_comp.links])},
     { ", ".join([f'{from_l} => {to_l}' for from_l,to_l,_ in parent_comp.links])});\n\n"""
+    return final
+import copy
+def boil_down(Input_Vec):
+    final = "---- PORTS ----\nsignal "
+    start = Input_Vec[1]
+    layers = {0:[f"F{str(i).zfill(2)}" for i in range(start)]}
+    signals = []
+    for layer in range(1,int(math.log(start,2))):
+        layers[layer] = []
+        for s in range(0,int(start/(2**(layer-1))),2):
+            first = layers[layer-1][s]
+            second = layers[layer-1][s+1]
+            merger = f"{first}OR{second}"
+            layers[layer].append(merger) 
+            signals.append(merger) 
+    final += ", ".join(signals) + ": STD_LOGIC;\n"
+    final += "---- BITS ----\n"
+    ops = []
+    newlayers = copy.copy(layers)
+    newlayers[0] = [f"{Input_Vec[0]}({i})" for i in range(start)]
+    for layer in range(1,int(math.log(start,2))):
+        for s in range(0,int(start/(2**(layer-1))),2):
+            first = newlayers[layer-1][s]
+            second = newlayers[layer-1][s+1]
+            merger = f"{layers[layer-1][s]}OR{layers[layer-1][s+1]}"
+            ops.append(f"{merger} <= {first} OR {second} after OR_gate_delay;")
+    final += "\n".join(ops)
     return final
 # parent = Component.loads("""entity RF_Mux3_32Bit_25383718 is
     # Port ( A : in STD_LOGIC_VECTOR (1 downto 0);
@@ -295,26 +323,30 @@ def funnel(parent_comp:Component, fitted_comp:Component,name,suffix=None):
     # print(f"""	RWTR_{i} <= TQ_bit{i} and RW;""")
     
     
-parent = Component.loads("""
-entity DP_32Bit_B_Logic_25383718 is
-Port (S0 : in STD_LOGIC;
-	S1 : in STD_LOGIC;
-	B : in STD_LOGIC_VECTOR (31 downto 0);
-	Y : out STD_LOGIC_VECTOR (31 downto 0);
-	);
-end DP_32Bit_B_Logic_25383718;""")
-child = Component.loads("""entity CPU_Mux2_1Bit_25383718 is
-Port (In0 : in STD_LOGIC;
-	In1 : in STD_LOGIC;
-	Sel : in STD_LOGIC;
-	Z : out STD_LOGIC);
-end CPU_Mux2_1Bit_25383718;""")
+parent = Component.loads("""entity DP_Shifter_25383718 is
+ Port (B : in STD_LOGIC_VECTOR (31 downto 0);
+	   S1 : in STD_LOGIC;
+	   S2 : in STD_LOGIC;
+	   G : out STD_LOGIC_VECTOR (31 downto 0));
+end DP_Shifter_25383718;""")
+child = Component.loads("""entity RF_Mux3_1Bit_25383718 is
+    Port ( A : in STD_LOGIC_VECTOR (1 downto 0);
+           I0 : in STD_LOGIC;
+           I1 : in STD_LOGIC;
+           I2 : in STD_LOGIC;
+           Z : out STD_LOGIC);
+end RF_Mux3_1Bit_25383718;""")
 
 
-parent.link("S1","In0")
-parent.link("S0","In1")
-parent.link("B","Sel")
-child.link("Z","Y")
+parent.link("S1","A(0)")
+parent.link("S2","A(1)")
+parent.link("B","I0")
+parent.link("B","I1")
+parent.link("B","I2")
+child.link("Z","G")
 
 
 print(replicate(parent,child))
+
+
+# print(boil_down(("MuxF_to_F",32)))
