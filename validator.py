@@ -15,7 +15,7 @@ def has_gate_delays(code):
         return False
     if len(re.findall(r"\w+? +?(xnor|XNOR) +?\w+?;",code)) > 0:
         return False
-    if len(re.findall(r"\w+? +?(not|NOT) +?\w+?;",code)) > 0:
+    if len(re.findall(r" +?(not|NOT) +?\w+?;",code)) > 0:
         return False
     return True
     
@@ -30,10 +30,21 @@ def valid_name(name):
         return False
     return True
 
+def valid_comp_name(code):
+    if len(re.findall(r'entity .+?_25383718(|_TB) is',code)) < 1:
+        return False
+    if len(re.findall(r'end .+?_25383718(|_TB);',code)) < 1:
+        return False
+    if len(re.findall(r'architecture (Simulation|Behavioral) of .+?_25383718(|_TB) is',code)) < 1:
+        return False
+    if len(re.findall(r'COMPONENT .+?_25383718',code)) != len(re.findall(r'COMPONENT',code))//2:
+        return False
+    return True
+
 ERROR = "\033[31mERROR\033[0m"
 def get_name(file):
     return os.path.basename(file.split(".")[0])
-def validate(path):
+def validate(path,top_level=True):
     LOG = ""
     if not os.path.exists(path):
         return f"{ERROR} path does not exist"
@@ -51,6 +62,8 @@ def validate(path):
             code = open(os.path.join(path,file),"r").read()
             if "TB" in file.split(".")[0] and not has_student_number(code):
                 LOG += f"{ERROR}:{file} is missing student number!!!\n"
+            if "TB" in file.split(".")[0] and not valid_comp_name(code):
+                LOG += f"{ERROR}:{file} has improper component name!!!\n"
             if not has_gate_delays(code):
                 LOG += f"{ERROR}:{file} has missing gate delays!!!\n"
     for basename in basenames:
@@ -83,15 +96,18 @@ def validate(path):
         for basename in basenames:
              LOG += f"{basename} \033[32m✔\033[0m\n"
 
-    if not valid_name(os.path.basename(path)):
-        LOG += f"{ERROR}: folder name {os.path.basename(path)} is invalid\n"
-    if len(xpr) != 1:
-        LOG += f"{ERROR}: Your Vivado Project File is missing\n"
-    if len(sources) != 1:
-        LOG += f"{ERROR}: Your Vivado Sources are missing\n"
-    if len(checklist) != 1:
-        LOG += f"{ERROR}: Your Checklist is missing\n"
+    if top_level:
+        if not valid_name(os.path.basename(path)):
+            LOG += f"{ERROR}: folder name {os.path.basename(path)} is invalid\n"
+        if len(xpr) != 1:
+            LOG += f"{ERROR}: Your Vivado Project File is missing\n"
+        if len(sources) != 1:
+            LOG += f"{ERROR}: Your Vivado Sources are missing\n"
+        if len(checklist) != 1:
+            LOG += f"{ERROR}: Your Checklist is missing\n"
     if ERROR not in LOG:
         LOG += "PASS"
     return LOG
 print(validate(sys.argv[1]))
+print(validate(os.path.join(sys.argv[1],"Processor_25383718.srcs/sim_1/new/"),top_level=False))
+print(validate(os.path.join(sys.argv[1],"Processor_25383718.srcs/sources_1/new/"),top_level=False))
